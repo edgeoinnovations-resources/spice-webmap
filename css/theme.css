@@ -1,0 +1,64 @@
+/* Spice Changed the World webmap: colour theme. See docs/DESIGN.md. */
+:root {
+  --bg: #F6EFE2;
+  --surface: #FBF7EF;
+  --ink: #2B1D14;
+  --ink-muted: #5A4636;
+  --line: #D9CBB4;
+  --sea: #D7E3E0;
+  --land: #F6EFE2;
+
+  --era-scent: #8F5414;
+  --era-water: #1F4E6B;
+  --era-exchange: #4F6B2E;
+  --era-motion: #9A4A1F;
+  --era-conquest: #9E2F25;
+  --highlight: #E2A72E;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1C1612;
+    --surface: #26201A;
+    --ink: #F1E7D6;
+    --ink-muted: #C9B9A3;
+    --line: #4A3D31;
+    --sea: #17242A;
+    --land: #2A221B;
+
+    --era-scent: #E3A54F;
+    --era-water: #7FB3D1;
+    --era-exchange: #A9C27A;
+    --era-motion: #E08A5A;
+    --era-conquest: #EE8676;
+    --highlight: #F2C14E;
+
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #1C1612;
+  --surface: #26201A;
+  --ink: #F1E7D6;
+  --ink-muted: #C9B9A3;
+  --line: #4A3D31;
+  --sea: #17242A;
+  --land: #2A221B;
+
+  --era-scent: #E3A54F;
+  --era-water: #7FB3D1;
+  --era-exchange: #A9C27A;
+  --era-motion: #E08A5A;
+  --era-conquest: #EE8676;
+  --highlight: #F2C14E;
+
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+}

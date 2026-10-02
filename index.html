@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spice Changed the World</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=Alegreya+Sans:ital,wght@0,400;0,500;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<!--MAPLIBRE_CSS--><link rel="stylesheet" href="vendor/maplibre-gl.css"><!--/MAPLIBRE_CSS-->
+<!--APP_CSS--><link rel="stylesheet" href="css/app.css"><!--/APP_CSS-->
+</head>
+<body>
+<!--BODY-->
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <h1>Spice Changed the World</h1>
+      <p>A detective's atlas of the spice trade</p>
+    </div>
+    <span class="draft">Draft for the authors</span>
+    <nav class="modes" role="tablist" aria-label="Map mode">
+      <button role="tab" data-mode="story" aria-selected="true">Story</button>
+      <button role="tab" data-mode="explore" aria-selected="false">Explore</button>
+      <button role="tab" data-mode="evidence" aria-selected="false">Evidence</button>
+    </nav>
+  </header>
+  <main class="panel" id="panel" aria-live="off"></main>
+  <section class="map-wrap" aria-label="Map">
+    <div id="map" role="region" aria-label="Interactive map of the spice trade"></div>
+    <div class="mapnote" id="mapnote" hidden></div>
+    <div class="dial" id="dial" hidden>
+      <div class="dial-top">
+        <label for="month">Monsoon month</label>
+        <output id="monthname" for="month">August</output>
+        <button class="btn play" id="play" aria-pressed="false">Play the year</button>
+      </div>
+      <input type="range" id="month" min="1" max="12" step="1" value="8">
+      <div class="ticks" aria-hidden="true"><span>J</span><span>F</span><span>M</span><span>A</span><span>M</span><span>J</span><span>J</span><span>A</span><span>S</span><span>O</span><span>N</span><span>D</span></div>
+      <p id="monthtext" aria-live="polite"></p>
+    </div>
+  </section>
+</div>
+<dialog class="ev" id="evdialog"></dialog>
+<!--/BODY-->
+<!--MAPLIBRE_JS--><script src="vendor/maplibre-gl.js"></script><!--/MAPLIBRE_JS-->
+<!--APP_JS--><script src="js/app.js"></script><!--/APP_JS-->
+</body>
+</html>
