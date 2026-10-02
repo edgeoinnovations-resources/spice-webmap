@@ -29,98 +29,242 @@ Promise.all(['data/spice.json', 'data/land.json', 'data/borders.json'].map(u => 
   .catch(err => { $('#panel').innerHTML = '<div class="section"><h2>Map data did not load</h2><p>Reload the page. If it keeps happening, the data files are missing from the site.</p></div>'; console.error(err); });
 
 /* ---------------- UI ---------------- */
+const REDUCE = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const NARROW = () => matchMedia('(max-width: 860px)').matches;
+let stops = [];
+
 function buildUI() {
+  const tb = $('.topbar');
+  const setTb = () => document.documentElement.style.setProperty('--topbar-h', tb.offsetHeight + 'px');
+  setTb(); new ResizeObserver(setTb).observe(tb);
   $$('.modes button').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
   document.addEventListener('keydown', e => {
-    if (mode !== 'story' || e.target.closest('input, dialog[open]')) return;
-    if (e.key === 'ArrowDown' || e.key === 'PageDown') { e.preventDefault(); go(current + 1); }
-    if (e.key === 'ArrowUp' || e.key === 'PageUp') { e.preventDefault(); go(current - 1); }
+    if (mode !== 'story' || !$('#cover').hidden || e.target.closest('input, dialog[open]')) return;
+    if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === 'ArrowRight') { e.preventDefault(); go(current + 1); }
+    if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'ArrowLeft') { e.preventDefault(); go(current - 1); }
   });
   const m = $('#month');
   m.addEventListener('input', () => { stopPlay(); setMonth(+m.value); });
   $('#play').addEventListener('click', () => playing ? stopPlay() : startPlay());
-  setMode((location.hash || '').replace('#', '') in { story: 1, explore: 1, evidence: 1 } ? location.hash.slice(1) : 'story', true);
+  $('#home').addEventListener('click', () => showCover(true));
+  stops = [];
+  D.cases.forEach(c => {
+    if (c.id !== 'intro') stops.push({ type: 'case', id: 'case-' + c.id, c });
+    D.steps.filter(s => s.case === c.id).forEach(s => stops.push({ type: 'step', id: 'step-' + s.id, s, c }));
+  });
+  buildCover();
+  const hash = (location.hash || '').slice(1);
+  setMode(hash in { explore: 1, evidence: 1 } ? hash : 'story', true);
+  showCover(!(hash in { explore: 1, evidence: 1, story: 1 }));
+}
+
+/* ---------------- Opening page ---------------- */
+function buildCover() {
+  const cv = $('#cover'); cv.innerHTML = '';
+  const hero = D.evById['resin-bowl'];
+  const toc = h('ol', { class: 'cover-toc' });
+  D.cases.forEach(c => {
+    const first = stops.findIndex(st => st.c && st.c.id === c.id);
+    toc.append(h('li', { style: `--era:${eraVar(c.era)}` },
+      h('button', { onclick: () => { showCover(false); setMode('story'); setTimeout(() => go(first, true), 60); } },
+        h('span', { class: 'toc-num' }, c.num || (c.id === 'intro' ? '•' : '•')),
+        h('span', { class: 'toc-text' }, h('b', {}, c.title), h('small', {}, c.label)))));
+  });
+  cv.append(h('div', { class: 'cover-inner' },
+    h('div', { class: 'cover-text' },
+      h('p', { class: 'cover-kicker' }, 'A companion map to Spice, a book in progress by Marc Aronson and Marina Budhos'),
+      h('h1', { id: 'cover-title' }, 'Spice Changed the World'),
+      h('p', { class: 'cover-lede' }, 'Pepper, cloves, nutmeg, cinnamon, frankincense. For thousands of years these small, dried, fragrant things crossed deserts and oceans. They built cities, spread religions, launched voyages and started wars.'),
+      h('p', {}, 'Yet the trade is hard to see today. Spices were eaten, burned or used up. The warehouses became shops and museums, and the objects scattered around the world. So this is a detective story. Marc and Marina have been travelling to find what’s left, and their photographs are your evidence.'),
+      h('div', { class: 'cover-how' },
+        h('div', {}, h('b', {}, 'Story'), h('span', {}, 'Scroll or press Next. The map moves with the text, case by case.')),
+        h('div', {}, h('b', {}, 'Explore'), h('span', {}, 'Turn layers on and off and play the monsoon year.')),
+        h('div', {}, h('b', {}, 'Evidence'), h('span', {}, 'Open every photo. Ask what it proves, what it can’t, and where it was really taken.'))),
+      h('div', { class: 'cover-actions' },
+        h('button', { class: 'btn primary big', id: 'begin', onclick: () => { showCover(false); setMode('story'); setTimeout(() => go(0, true), 60); } }, 'Begin the story'),
+        h('button', { class: 'btn big', onclick: () => { showCover(false); setMode('evidence'); } }, 'Go to the evidence'))),
+    h('div', { class: 'cover-side' },
+      h('figure', { class: 'cover-fig' }, h('img', { src: `img/full/${hero.img}.jpg`, alt: 'A wooden bowl of frankincense grains for sale in Venice' }),
+        h('figcaption', {}, 'Frankincense for sale in Venice, April 2026. ' + D.credit)),
+      h('nav', { 'aria-label': 'Cases' }, h('h2', { class: 'toc-title' }, 'The cases'), toc))));
+}
+function showCover(on) {
+  const cv = $('#cover'); cv.hidden = !on;
+  document.body.classList.toggle('cover-open', on);
+  if (on) { cv.scrollTop = 0; $('#begin').focus({ preventScroll: true }); if (map) travel({ center: [60, 18], zoom: 1.4 }); }
 }
 
 function setMode(m, initial) {
   mode = m;
   $$('.modes button').forEach(b => b.setAttribute('aria-selected', b.dataset.mode === m));
   const p = $('#panel'); p.innerHTML = ''; p.scrollTop = 0;
+  moveToken++; clearTimeout(schedTimer); clearSpot();
   if (m === 'story') renderStory(p);
   if (m === 'explore') renderExplore(p);
   if (m === 'evidence') renderEvidence(p);
-  if (!initial && map) { if (m !== 'story') { $('#mapnote').hidden = true; } }
+  if (m !== 'story') $('#mapnote').hidden = true;
 }
 
 function eraVar(era) { return `var(--era-${era})`; }
 
 function renderStory(p) {
-  let lastCase = null;
-  D.steps.forEach((s, i) => {
-    const c = D.cases.find(c => c.id === s.case);
-    if (s.case !== lastCase) {
-      lastCase = s.case;
-      p.append(h('header', { class: 'case-head', style: `--era:${eraVar(c.era)}` },
-        h('div', { class: 'label' }, c.label), h('h2', {}, c.title), c.question ? h('p', { class: 'question' }, c.question) : null));
+  const prog = h('div', { class: 'progress', role: 'navigation', 'aria-label': 'Jump to a case' });
+  D.cases.forEach(c => {
+    const first = stops.findIndex(st => st.c && st.c.id === c.id);
+    prog.append(h('button', { class: 'seg', 'data-case': c.id, style: `--era:${eraVar(c.era)}`, title: `${c.label}: ${c.title}`, 'aria-label': `${c.label}: ${c.title}`, onclick: () => go(first) }, h('span', {})));
+  });
+  p.append(h('div', { class: 'storyhead' }, prog, h('div', { class: 'nowcase', id: 'nowcase', 'aria-live': 'polite' })));
+  let wrap = null;
+  stops.forEach((st, i) => {
+    const c = st.c;
+    if (st.type === 'case' || (st.type === 'step' && c.id === 'intro' && !wrap)) {
+      wrap = h('section', { class: 'chapter', style: `--era:${eraVar(c.era)}`, 'aria-label': `${c.label}: ${c.title}` });
+      p.append(wrap);
     }
-    const card = h('article', { class: 'step', id: 'step-' + s.id, 'data-i': i, style: `--era:${eraVar(c.era)}`, tabindex: '-1', 'aria-labelledby': 'h-' + s.id },
+    if (st.type === 'case') {
+      const n = D.steps.filter(s => s.case === c.id).length;
+      wrap.append(h('header', { class: 'chapter-card stop', id: st.id, 'data-i': i, tabindex: '-1' },
+        h('div', { class: 'chapter-num', 'aria-hidden': 'true' }, c.num || '∴'),
+        h('div', { class: 'chapter-label' }, c.label),
+        h('h2', {}, c.title),
+        c.question ? h('p', { class: 'question' }, c.question) : null,
+        h('p', { class: 'chapter-meta' }, `${n} stops · scroll or press Next`)));
+      return;
+    }
+    const s = st.s;
+    const card = h('article', { class: 'step stop', id: st.id, 'data-i': i, tabindex: '-1', 'aria-labelledby': 'h-' + s.id },
+      s.spot ? h('div', { class: 'step-place' }, s.spot.label) : null,
       h('h3', { id: 'h-' + s.id }, s.title), ...s.body.map(t => h('p', {}, t)));
     const tags = [];
     if (s.certainty) tags.push(h('span', { class: 'chip cert-' + s.certainty }, h('span', { class: 'dot' }), 'Certainty: ' + CERT[s.certainty]));
     if (s.monsoon) tags.push(h('span', { class: 'chip' }, 'Month dial on the map'));
     if (tags.length) card.append(h('div', { class: 'tags' }, tags));
     if (s.evidence) card.append(h('div', { class: 'thumbs' }, s.evidence.map(id => { const e = D.evById[id]; return h('button', { class: 'thumb', onclick: () => openEvidence(id), 'aria-label': 'Open evidence: ' + e.title }, h('img', { src: `img/thumb/${e.img}.jpg`, alt: '', loading: 'lazy' })); })));
-    p.append(card);
+    wrap.append(card);
   });
   p.append(h('div', { class: 'story-end' }, 'Draft built from the authors’ March 2026 proposal and travel photographs. Text will change as the book is written.'));
   p.append(h('nav', { class: 'stepnav', 'aria-label': 'Story steps' },
-    h('button', { class: 'btn', onclick: () => go(current - 1), 'aria-label': 'Previous step' }, '↑ Back'),
-    h('span', { id: 'stepcount', 'aria-live': 'polite' }, ''),
-    h('button', { class: 'btn primary', onclick: () => go(current + 1), 'aria-label': 'Next step' }, 'Next ↓')));
-  const narrow = matchMedia('(max-width: 860px)').matches;
+    h('button', { class: 'btn', onclick: () => go(current - 1), 'aria-label': 'Previous stop' }, '↑ Back'),
+    h('span', { id: 'stepcount' }, ''),
+    h('button', { class: 'btn primary', onclick: () => go(current + 1), 'aria-label': 'Next stop' }, 'Next ↓')));
   const io = new IntersectionObserver(entries => {
-    entries.filter(e => e.isIntersecting).forEach(e => activate(+e.target.dataset.i));
-  }, { root: null, rootMargin: narrow ? '-62% 0px -30% 0px' : '-35% 0px -55% 0px' });
-  $$('.step', p).forEach(el => io.observe(el));
+    entries.filter(e => e.isIntersecting).forEach(e => schedule(+e.target.dataset.i));
+  }, { root: null, rootMargin: NARROW() ? '-70% 0px -18% 0px' : '-40% 0px -50% 0px' });
+  $$('.stop', p).forEach(el => io.observe(el));
   current = -1;
   activate(0);
 }
 
-function go(i) {
-  i = Math.max(0, Math.min(D.steps.length - 1, i));
-  const el = $('#step-' + D.steps[i].id);
+let goingTo = null, schedTimer = null;
+function go(i, instant) {
+  i = Math.max(0, Math.min(stops.length - 1, i));
+  const el = $('#' + stops[i].id);
   if (!el) return;
-  el.scrollIntoView({ block: matchMedia('(max-width: 860px)').matches ? 'start' : 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  goingTo = i;
+  const behavior = REDUCE() || instant ? 'auto' : 'smooth';
+  if (NARROW()) {
+    const top = $('.topbar').offsetHeight + $('.map-wrap').offsetHeight + 14;
+    window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - top, behavior });
+  } else el.scrollIntoView({ block: 'center', behavior });
+  clearTimeout(schedTimer);
   activate(i);
   el.focus({ preventScroll: true });
+  setTimeout(() => { goingTo = null; }, 1200);
+}
+// While the reader scrolls, wait until they settle before moving the map.
+function schedule(i) {
+  if (goingTo !== null) return;
+  clearTimeout(schedTimer);
+  schedTimer = setTimeout(() => activate(i), 350);
 }
 
 function activate(i) {
-  if (i === current || !D.steps[i]) return;
+  if (i === current || !stops[i]) return;
   current = i;
-  const s = D.steps[i];
-  $$('.step').forEach(el => el.classList.toggle('active', +el.dataset.i === i));
-  const sc = $('#stepcount'); if (sc) sc.textContent = `${i + 1} of ${D.steps.length}`;
-  if (!mapReady) { pendingStep = s; return; }
-  applyStep(s);
+  const st = stops[i];
+  $$('.stop').forEach(el => el.classList.toggle('active', +el.dataset.i === i));
+  const sc = $('#stepcount'); if (sc) sc.textContent = `${i + 1} of ${stops.length}`;
+  $$('.progress .seg').forEach(b => { const ci = D.cases.findIndex(c => c.id === b.dataset.case), cur = D.cases.findIndex(c => c.id === st.c.id); b.classList.toggle('done', ci < cur); b.classList.toggle('now', ci === cur); });
+  const nc = $('#nowcase'); if (nc) { nc.style.setProperty('--era', eraVar(st.c.era)); nc.textContent = `${st.c.label} · ${st.c.title}`; }
+  if (!mapReady) { pendingStep = st; return; }
+  applyStop(st);
 }
 let pendingStep = null;
 
-function applyStep(s) {
-  const c = D.cases.find(c => c.id === s.case);
-  setLayers(new Set(s.layers || []));
-  setEvidencePoints(s.evidence || []);
-  showDial(!!s.monsoon);
-  Object.entries(placeMarkers).forEach(([id, m]) => m.getElement().firstChild.classList.toggle('hl', (s.highlight || []).includes(id)));
-  const note = $('#mapnote');
-  if (s.layers && s.layers.length) {
-    const L = D.layers[s.layers[0]];
-    note.hidden = false; note.style.setProperty('--era', eraVar(L.era));
-    note.innerHTML = ''; note.append(h('b', {}, L.title), L.legend || '');
-  } else note.hidden = true;
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  map[reduce ? 'jumpTo' : 'flyTo']({ center: s.camera.center, zoom: s.camera.zoom - (innerWidth < 860 ? 0.6 : 0), speed: 0.9, curve: 1.4, essential: true });
+/* ---------------- Map choreography ----------------
+   1. Clear what the last stop showed.
+   2. Travel: if the jump is long, pull back until both places are in view, pause, then fly in.
+   3. Only once the camera has arrived, draw the layers, the spotlight and the evidence. */
+let moveToken = 0;
+function applyStop(st) {
+  const token = ++moveToken;
+  setLayers(new Set()); setEvidencePoints([]); clearSpot(); showDial(false);
+  $('#mapnote').hidden = true;
+  if (st.type === 'case') {
+    travel(st.c.camera, token).then(ok => { if (!ok) return; showCaseNote(st.c); });
+    return;
+  }
+  const s = st.s;
+  travel(s.camera, token).then(ok => {
+    if (!ok) return;
+    if (s.spot) setSpot(s.spot);
+    setLayers(new Set(s.layers || []), true);
+    setEvidencePoints(s.evidence || []);
+    showDial(!!s.monsoon);
+    const note = $('#mapnote');
+    if (s.layers && s.layers.length) {
+      const L = D.layers[s.layers[0]];
+      note.hidden = false; note.style.setProperty('--era', eraVar(L.era));
+      note.innerHTML = ''; note.append(h('b', {}, L.title), L.legend || '');
+    }
+  });
 }
+function showCaseNote(c) {
+  const note = $('#mapnote'); note.hidden = false; note.style.setProperty('--era', eraVar(c.era));
+  note.innerHTML = ''; note.append(h('b', {}, `${c.label}: ${c.title}`), c.question || '');
+}
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+function moveEnd(token) { return new Promise(r => { const done = () => r(token === moveToken); map.once('moveend', done); }); }
+function kmBetween(a, b) {
+  const R = 6371, rad = Math.PI / 180, dLat = (b[1] - a[1]) * rad, dLon = (b[0] - a[0]) * rad;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * rad) * Math.cos(b[1] * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+async function travel(cam, token = ++moveToken) {
+  const zoom = cam.zoom - (NARROW() ? 0.7 : 0);
+  const target = { center: cam.center, zoom };
+  if (REDUCE()) { map.jumpTo(target); return token === moveToken; }
+  map.stop();
+  const from = map.getCenter().toArray(), z0 = map.getZoom();
+  const km = kmBetween(from, cam.center);
+  const close = Math.min(z0, zoom) > 3.2;
+  if (km > 600 && (z0 > 3.4 || zoom > 3.4)) {
+    // Stage 1: pull back so both places are on screen.
+    const b = new maplibregl.LngLatBounds(from, from).extend(cam.center);
+    const fit = map.cameraForBounds(b, { padding: NARROW() ? 40 : 110 });
+    const outZoom = Math.min(fit ? fit.zoom : 2, z0, zoom, 4.2);
+    if (z0 - outZoom > 0.6) {
+      map.easeTo({ center: fit ? fit.center : from, zoom: outZoom, duration: 1700, easing: t => 1 - Math.pow(1 - t, 3) });
+      if (!(await moveEnd(token))) return false;
+      await wait(450); if (token !== moveToken) return false;
+    }
+    map.flyTo({ ...target, duration: 2600, curve: 1.2, essential: true });
+  } else {
+    const d = Math.min(2600, Math.max(1300, km * 0.6 + Math.abs(z0 - zoom) * 260));
+    map.flyTo({ ...target, duration: d, curve: 1.3, essential: true });
+  }
+  return moveEnd(token);
+}
+
+/* Spotlight on a single place */
+let spotMarker = null;
+function setSpot(sp) {
+  clearSpot();
+  const el = h('div', { class: 'spot', 'aria-hidden': 'true' }, h('span', { class: 'spot-ring' }), h('span', { class: 'spot-label' }, sp.label));
+  spotMarker = new maplibregl.Marker({ element: el }).setLngLat([sp.lon, sp.lat]).addTo(map);
+}
+function clearSpot() { if (spotMarker) { spotMarker.remove(); spotMarker = null; } }
 
 function renderExplore(p) {
   const sec = h('div', { class: 'section' }, h('h2', {}, 'Explore the layers'), h('p', {}, 'Turn layers on and off, then use the month dial to see how the monsoon set the rhythm of the trade.'));
@@ -232,7 +376,7 @@ function buildMap(land, borders) {
     addEvidenceLayer();
     addPlaces();
     mapReady = true;
-    if (pendingStep) { applyStep(pendingStep); pendingStep = null; }
+    if (pendingStep) { applyStop(pendingStep); pendingStep = null; }
     else if (mode === 'explore') setEvidencePoints(D.evidence.map(e => e.id));
     else if (mode === 'evidence') setEvidencePoints(D.evidence.map(e => e.id));
     watchTheme();
@@ -240,7 +384,7 @@ function buildMap(land, borders) {
 }
 
 function addStoryLayer(id, L) {
-  map.addSource(id, { type: 'geojson', data: L.data });
+  map.addSource(id, { type: 'geojson', data: L.data, lineMetrics: true });
   const color = css('--era-' + L.era);
   const vis = 'none';
   if (L.kind === 'fuzzy') {
@@ -256,11 +400,11 @@ function addStoryLayer(id, L) {
   const lineFeatures = L.kind === 'route' || L.kind === 'network' || L.kind === 'converge';
   if (lineFeatures) {
     map.addLayer({ id: id + '-line', type: 'line', source: id, filter: ['==', ['geometry-type'], 'LineString'], layout: { visibility: vis, 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': color, 'line-width': L.kind === 'network' ? 1.4 : ['interpolate', ['linear'], ['zoom'], 1, 2, 6, 3.5], 'line-opacity': L.kind === 'network' ? .7 : .95, ...(L.dashed ? { 'line-dasharray': [1.5, 1.5] } : {}) } });
+      paint: { 'line-color': color, 'line-width': L.kind === 'network' ? 1.4 : ['interpolate', ['linear'], ['zoom'], 1, 2, 6, 3.5], 'line-opacity': L.kind === 'network' ? .7 : .95, 'line-opacity-transition': { duration: 900 }, ...(L.dashed ? { 'line-dasharray': [1.5, 1.5] } : { 'line-gradient': grad(color, 1) }) } });
   }
   if (L.kind === 'points' || L.kind === 'converge') {
     map.addLayer({ id: id + '-pt', type: 'circle', source: id, filter: ['==', ['geometry-type'], 'Point'], layout: { visibility: vis },
-      paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 1, 5, 6, 8], 'circle-color': color, 'circle-stroke-color': css('--bg'), 'circle-stroke-width': 2 } });
+      paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 1, 5, 6, 8], 'circle-opacity-transition': { duration: 700 }, 'circle-stroke-opacity-transition': { duration: 700 }, 'circle-color': color, 'circle-stroke-color': css('--bg'), 'circle-stroke-width': 2 } });
   }
   const hit = [id + '-pt', id + '-line', id + '-fill'].filter(l => map.getLayer(l));
   hit.forEach(l => {
@@ -274,11 +418,31 @@ function addStoryLayer(id, L) {
 }
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-function setLayers(set) {
+const grad = (color, p) => p >= 1 ? ['step', ['line-progress'], color, 1, color] : ['step', ['line-progress'], color, Math.max(0.0001, p), 'rgba(0,0,0,0)'];
+let revealRaf = null;
+// animate = draw routes from start to end and fade points in, once the camera has arrived
+function setLayers(set, animate) {
   visible.clear(); set.forEach(id => visible.add(id));
   if (!map || !map.getStyle()) return;
-  Object.keys(D.layers).forEach(id => ['-fill', '-edge', '-line', '-pt'].forEach(sfx => { if (map.getLayer(id + sfx)) map.setLayoutProperty(id + sfx, 'visibility', set.has(id) ? 'visible' : 'none'); }));
+  cancelAnimationFrame(revealRaf);
+  const anim = animate && !REDUCE();
+  Object.keys(D.layers).forEach(id => {
+    const on = set.has(id), L = D.layers[id], color = css('--era-' + L.era);
+    ['-fill', '-edge', '-line', '-pt'].forEach(sfx => { if (map.getLayer(id + sfx)) map.setLayoutProperty(id + sfx, 'visibility', on ? 'visible' : 'none'); });
+    if (map.getLayer(id + '-line') && !L.dashed) map.setPaintProperty(id + '-line', 'line-gradient', grad(color, on && anim ? 0 : 1));
+    if (map.getLayer(id + '-pt')) { const o = on && anim ? 0 : 1; map.setPaintProperty(id + '-pt', 'circle-opacity', o); map.setPaintProperty(id + '-pt', 'circle-stroke-opacity', o); }
+  });
   fuzzyMarkers.forEach(({ layer, m }) => set.has(layer) ? m.addTo(map) : m.remove());
+  if (!anim) return;
+  const ids = [...set].filter(id => D.layers[id]);
+  const t0 = performance.now(), dur = 2400;
+  const tick = now => {
+    const t = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - t, 2);
+    ids.forEach(id => { const L = D.layers[id]; if (map.getLayer(id + '-line') && !L.dashed) map.setPaintProperty(id + '-line', 'line-gradient', grad(css('--era-' + L.era), e)); });
+    if (t < 1) revealRaf = requestAnimationFrame(tick);
+  };
+  revealRaf = requestAnimationFrame(tick);
+  setTimeout(() => ids.forEach(id => { if (map.getLayer(id + '-pt')) { map.setPaintProperty(id + '-pt', 'circle-opacity', 1); map.setPaintProperty(id + '-pt', 'circle-stroke-opacity', 1); } }), 500);
 }
 
 let evMarkers = [], evAlways = true;
@@ -377,7 +541,7 @@ function watchTheme() {
       const c = css('--era-' + L.era);
       if (map.getLayer(id + '-fill')) map.setPaintProperty(id + '-fill', 'fill-color', c);
       if (map.getLayer(id + '-edge')) map.setPaintProperty(id + '-edge', 'line-color', c);
-      if (map.getLayer(id + '-line')) map.setPaintProperty(id + '-line', 'line-color', c);
+      if (map.getLayer(id + '-line')) { map.setPaintProperty(id + '-line', 'line-color', c); if (!L.dashed) map.setPaintProperty(id + '-line', 'line-gradient', grad(c, 1)); }
       if (map.getLayer(id + '-pt')) { map.setPaintProperty(id + '-pt', 'circle-color', c); map.setPaintProperty(id + '-pt', 'circle-stroke-color', css('--bg')); }
     });
     ['monsoon-line'].forEach(l => map.setPaintProperty(l, 'line-color', css('--era-water')));
